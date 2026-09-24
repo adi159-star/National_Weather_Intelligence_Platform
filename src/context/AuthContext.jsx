@@ -65,7 +65,7 @@ export function AuthProvider({ children }) {
         // Synchronize authenticated Firebase user with MongoDB backend
         try {
           const idToken = await user.getIdToken()
-          const response = await fetch('http://localhost:5000/api/users/sync', {
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/sync`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

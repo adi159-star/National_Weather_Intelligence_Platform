@@ -37,7 +37,7 @@ export default function AdminDashboard() {
     try {
       setLoading(true)
       setError('')
-      const response = await fetch('http://localhost:5000/api/weather-reports')
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/weather-reports`)
       if (!response.ok) {
         throw new Error(`Failed to load weather reports (Status: ${response.status})`)
       }

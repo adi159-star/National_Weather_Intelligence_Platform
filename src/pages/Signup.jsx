@@ -40,7 +40,7 @@ export default function Signup() {
       if (user) {
         try {
           const idToken = await user.getIdToken()
-          const syncRes = await fetch('http://localhost:5000/api/users/sync', {
+          const syncRes = await fetch(`${import.meta.env.VITE_API_URL}/api/users/sync`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
