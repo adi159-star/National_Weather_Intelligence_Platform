@@ -11,12 +11,12 @@ import { useAuth } from '../context/AuthContext'
  * 3. If authenticated -> permits access to user routes.
  * 4. Includes clear structure for future backend role-checking (e.g. role === 'admin').
  */
-export default function ProtectedRoute({ children, requireAdmin = false }) {
-  const { currentUser, loading } = useAuth()
+export default function ProtectedRoute({ children, requireAdmin = false, allowGuest = false }) {
+  const { currentUser, isGuest, loading } = useAuth()
   const location = useLocation()
 
-  // 1. Loading State: Display high-aesthetic meteorological loader while Firebase resolves auth state
-  if (loading) {
+  // 1. Loading State: Display meteorological loader while Firebase resolves auth state (skipped if already in guest mode)
+  if (loading && !isGuest) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center">
         <div className="relative mb-4">
@@ -36,26 +36,32 @@ export default function ProtectedRoute({ children, requireAdmin = false }) {
     )
   }
 
-  // 2. Unauthenticated check: Redirect to /login
-  if (!currentUser) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+  // 2. Admin Route Protection:
+  // ONLY accessible when currentUser exists, currentUser.role === 'admin', and isGuest === false.
+  if (requireAdmin) {
+    if (!currentUser && !isGuest) {
+      return <Navigate to="/login" state={{ from: location }} replace />
+    }
+    if (isGuest || currentUser?.role !== 'admin') {
+      return <Navigate to="/dashboard" replace />
+    }
+    return children
   }
 
-  // 3. Conceptual Role Verification Architecture for Admin Routes:
-  //
-  // Authenticated User
-  //       ↓
-  //   Check Role (Custom Claims / Backend DB)
-  //       ↓
-  //  role === 'admin'?
-  //   ├── Yes ──> Render Admin Operations Center
-  //   └── No  ──> Render Access Denied / Backend Connection Pending Notice
-  //
-  // In Phase 3, if requireAdmin is true, the user's verified token claims will be checked.
-  // Currently, the AdminDashboard component itself gracefully communicates this requirement.
-  if (requireAdmin && !currentUser) {
+  // 3. User / Read-Only Route Protection:
+  // If allowGuest is enabled, allow both verified Firebase users and guest visitors.
+  if (allowGuest) {
+    if (!currentUser && !isGuest) {
+      return <Navigate to="/login" state={{ from: location }} replace />
+    }
+    return children
+  }
+
+  // 4. Strict Authenticated-Only Route Check (e.g. actions requiring confirmed identity):
+  if (!currentUser) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
   return children
 }
+

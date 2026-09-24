@@ -16,6 +16,7 @@ import Signup from './pages/Signup'
 import UserDashboard from './pages/UserDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import ProtectedRoute from './routes/ProtectedRoute'
+import AdminRoute from './routes/AdminRoute'
 
 /**
  * Landing Page Component (Route: /)
@@ -23,7 +24,7 @@ import ProtectedRoute from './routes/ProtectedRoute'
  * access to authentication and dashboards.
  */
 function HomePage() {
-  const { currentUser } = useAuth()
+  const { currentUser, isGuest } = useAuth()
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
@@ -37,7 +38,7 @@ function HomePage() {
         {/* Phase Badge */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-400 text-xs sm:text-sm font-medium tracking-wide mb-6">
           <Sparkles className="w-4 h-4" />
-          <span>Phase 2 — Real Google Authentication (Firebase SDK)</span>
+          <span>Phase 2 — Real Google Authentication & Guest Access</span>
         </div>
 
         {/* Weather Icon */}
@@ -59,10 +60,18 @@ function HomePage() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
           {currentUser ? (
             <Link
-              to="/user"
+              to={currentUser.role === 'admin' ? '/admin' : '/dashboard'}
               className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-semibold text-sm shadow-lg shadow-sky-500/25 transition-all duration-200 flex items-center justify-center gap-2"
             >
-              <span>Go to User Dashboard</span>
+              <span>{currentUser.role === 'admin' ? 'Go to Admin Portal' : 'Go to User Dashboard'}</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          ) : isGuest ? (
+            <Link
+              to="/dashboard"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold text-sm shadow-lg shadow-emerald-500/25 transition-all duration-200 flex items-center justify-center gap-2"
+            >
+              <span>Go to Dashboard (Guest Mode)</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           ) : (
@@ -83,13 +92,16 @@ function HomePage() {
             </>
           )}
 
-          <Link
-            to="/admin"
-            className="w-full sm:w-auto px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800/90 text-slate-400 hover:text-slate-300 font-medium text-sm border border-slate-800 flex items-center justify-center gap-1.5 transition-all"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span>Admin Gateway</span>
-          </Link>
+          {/* Admin Gateway link rendered ONLY for verified MongoDB admin users */}
+          {currentUser?.role === 'admin' && !isGuest && (
+            <Link
+              to="/admin"
+              className="w-full sm:w-auto px-4 py-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 font-medium text-sm border border-amber-500/30 flex items-center justify-center gap-1.5 transition-all"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Admin Portal</span>
+            </Link>
+          )}
         </div>
 
         {/* Foundation Status Grid */}
@@ -143,23 +155,31 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
 
-            {/* Protected Routes: requires authenticated user */}
+            {/* Protected User Dashboard Routes: permits authenticated users and read-only guests */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute allowGuest={true}>
+                  <UserDashboard />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/user"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowGuest={true}>
                   <UserDashboard />
                 </ProtectedRoute>
               }
             />
 
-            {/* Protected Admin Route: requires authentication + backend admin role in future */}
+            {/* Protected Admin Route: strictly verified MongoDB role === 'admin' and isGuest === false */}
             <Route
               path="/admin"
               element={
-                <ProtectedRoute requireAdmin={true}>
+                <AdminRoute>
                   <AdminDashboard />
-                </ProtectedRoute>
+                </AdminRoute>
               }
             />
 

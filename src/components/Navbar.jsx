@@ -1,14 +1,26 @@
 import React, { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { CloudSunRain, LogOut, User, Menu, X, BarChart3, FilePlus2, LayoutDashboard } from 'lucide-react'
+import { 
+  CloudSunRain, 
+  LogOut, 
+  User, 
+  Menu, 
+  X, 
+  BarChart3, 
+  FilePlus2, 
+  LayoutDashboard,
+  Compass,
+  LogIn,
+  ShieldCheck
+} from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 /**
  * Reusable Navbar for National Weather Big Data Analytics Platform.
- * Displays state-aware navigation links based on user authentication.
+ * Displays state-aware navigation links for Authenticated, Guest, and Public visitors.
  */
 export default function Navbar() {
-  const { currentUser, logout } = useAuth()
+  const { currentUser, isGuest, logout, exitGuestMode } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -25,6 +37,12 @@ export default function Navbar() {
       setIsLoggingOut(false)
       setMobileMenuOpen(false)
     }
+  }
+
+  const handleExitGuest = () => {
+    exitGuestMode()
+    setMobileMenuOpen(false)
+    navigate('/login')
   }
 
   const isActive = (path) => location.pathname === path
@@ -57,9 +75,9 @@ export default function Navbar() {
             {currentUser ? (
               <>
                 <Link
-                  to="/user"
+                  to="/dashboard"
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${
-                    isActive('/user')
+                    isActive('/dashboard') || isActive('/user')
                       ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
                       : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
                   }`}
@@ -67,6 +85,21 @@ export default function Navbar() {
                   <LayoutDashboard className="w-4 h-4" />
                   Dashboard
                 </Link>
+
+                {/* Visible ONLY to authenticated administrators */}
+                {currentUser?.role === 'admin' && !isGuest && (
+                  <Link
+                    to="/admin"
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${
+                      isActive('/admin')
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                        : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    Admin Portal
+                  </Link>
+                )}
 
                 <a
                   href="#submit-report"
@@ -119,6 +152,46 @@ export default function Navbar() {
                   <span>Logout</span>
                 </button>
               </>
+            ) : isGuest ? (
+              <>
+                <Link
+                  to="/dashboard"
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 ${
+                    isActive('/dashboard') || isActive('/user')
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Dashboard
+                </Link>
+
+                <a
+                  href="#analytics"
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 transition-colors inline-flex items-center gap-1.5"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  Analytics
+                </a>
+
+                {/* Guest Badge Indicator */}
+                <div className="flex items-center gap-2 ml-2 pl-3 border-l border-slate-800">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Compass className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-400">Guest</span>
+                </div>
+
+                {/* Sign In CTA */}
+                <button
+                  onClick={handleExitGuest}
+                  className="ml-2 px-3.5 py-1.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 shadow-md shadow-sky-500/20 transition-all inline-flex items-center gap-1.5 cursor-pointer"
+                  title="Sign in with Google"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign In</span>
+                </button>
+              </>
             ) : (
               <>
                 <Link
@@ -144,7 +217,7 @@ export default function Navbar() {
 
           {/* Mobile Menu Toggle Button */}
           <div className="flex md:hidden items-center gap-2">
-            {currentUser && (
+            {currentUser ? (
               <div className="w-7 h-7 rounded-full overflow-hidden border border-sky-500/40">
                 {currentUser.photoURL ? (
                   <img
@@ -157,7 +230,11 @@ export default function Navbar() {
                   <User className="w-full h-full p-1 text-slate-400" />
                 )}
               </div>
-            )}
+            ) : isGuest ? (
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Compass className="w-4 h-4" />
+              </div>
+            ) : null}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 focus:outline-none"
@@ -184,12 +261,22 @@ export default function Navbar() {
               </div>
 
               <Link
-                to="/user"
+                to="/dashboard"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-200 hover:bg-slate-800"
               >
                 Dashboard
               </Link>
+              {currentUser?.role === 'admin' && !isGuest && (
+                <Link
+                  to="/admin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block px-3 py-2 rounded-lg text-sm font-medium text-amber-400 hover:bg-amber-500/10 flex items-center gap-2"
+                >
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  Admin Portal
+                </Link>
+              )}
               <a
                 href="#submit-report"
                 onClick={() => setMobileMenuOpen(false)}
@@ -213,6 +300,41 @@ export default function Navbar() {
                 Logout
               </button>
             </>
+          ) : isGuest ? (
+            <>
+              <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-emerald-300">Guest Mode</p>
+                  <p className="text-xs text-emerald-400/80">Read-Only Telemetry Observer</p>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300">
+                  Guest
+                </span>
+              </div>
+
+              <Link
+                to="/dashboard"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-200 hover:bg-slate-800"
+              >
+                Dashboard
+              </Link>
+              <a
+                href="#analytics"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-sm font-medium text-slate-200 hover:bg-slate-800"
+              >
+                Analytics
+              </a>
+
+              <button
+                onClick={handleExitGuest}
+                className="w-full mt-2 text-left px-3 py-2 rounded-lg text-sm font-medium text-sky-400 hover:bg-sky-500/10 flex items-center gap-2 cursor-pointer"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In to Account
+              </button>
+            </>
           ) : (
             <div className="grid grid-cols-2 gap-2 pt-2">
               <Link
@@ -233,6 +355,7 @@ export default function Navbar() {
           )}
         </div>
       )}
+
     </header>
   )
 }

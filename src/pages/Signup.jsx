@@ -11,17 +11,22 @@ import { useAuth } from '../context/AuthContext'
  * No custom account registration, fake role selector, or password creation is needed.
  */
 export default function Signup() {
-  const { loginWithGoogle, currentUser, authError, clearAuthError, isConfigured } = useAuth()
+  const { loginWithGoogle, currentUser, authError, clearAuthError, isConfigured, loading } = useAuth()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [localError, setLocalError] = useState('')
   const navigate = useNavigate()
 
   // Redirect if already authenticated
   useEffect(() => {
+    if (loading) return
     if (currentUser) {
-      navigate('/user', { replace: true })
+      if (currentUser.role === 'admin') {
+        navigate('/admin', { replace: true })
+      } else {
+        navigate('/dashboard', { replace: true })
+      }
     }
-  }, [currentUser, navigate])
+  }, [currentUser, loading, navigate])
 
   const handleGoogleSignup = async () => {
     try {
@@ -30,10 +35,37 @@ export default function Signup() {
       setIsSubmitting(true)
 
       // Calls Google OAuth via Firebase Modular SDK
-      await loginWithGoogle()
+      const user = await loginWithGoogle()
+
+      if (user) {
+        try {
+          const idToken = await user.getIdToken()
+          const syncRes = await fetch('http://localhost:5000/api/users/sync', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`
+            },
+            body: JSON.stringify({
+              name: user.displayName,
+              email: user.email,
+              photoURL: user.photoURL
+            })
+          })
+          if (syncRes.ok) {
+            const syncData = await syncRes.json()
+            if (syncData?.user?.role === 'admin') {
+              navigate('/admin', { replace: true })
+              return
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Backend sync check error in signup:', syncErr)
+        }
+      }
 
       // Redirect immediately to User Dashboard upon account creation/sign-in
-      navigate('/user', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       setLocalError(err.message || 'Google registration could not be completed.')
     } finally {

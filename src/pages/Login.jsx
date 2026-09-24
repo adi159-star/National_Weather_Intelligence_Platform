@@ -1,29 +1,44 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { CloudSunRain, AlertCircle } from 'lucide-react'
+import { CloudSunRain, AlertCircle, Compass } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 /**
  * Login Page — National Weather Intelligence Platform
- * Real Google OAuth 2.0 via Firebase Authentication.
+ * Real Google OAuth 2.0 via Firebase Authentication + Guest Mode access.
  * 
  * Note: Google OAuth automatically handles account creation for new users
  * upon first sign-in. There is no need for a separate custom registration step.
  */
 export default function Login() {
-  const { loginWithGoogle, currentUser, authError, clearAuthError, isConfigured } = useAuth()
+  const { 
+    loginWithGoogle, 
+    currentUser, 
+    isGuest, 
+    continueAsGuest, 
+    authError, 
+    clearAuthError, 
+    isConfigured,
+    loading
+  } = useAuth()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [localError, setLocalError] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Redirect if already logged in
-  const from = location.state?.from?.pathname || '/user'
+  // Redirect if already logged in or in guest mode
   useEffect(() => {
-    if (currentUser) {
-      navigate(from, { replace: true })
+    if (loading) return
+    if (isGuest) {
+      navigate('/dashboard', { replace: true })
+    } else if (currentUser) {
+      if (currentUser.role === 'admin') {
+        navigate('/admin', { replace: true })
+      } else {
+        navigate('/dashboard', { replace: true })
+      }
     }
-  }, [currentUser, navigate, from])
+  }, [currentUser, isGuest, loading, navigate])
 
   const handleGoogleLogin = async () => {
     try {
@@ -32,15 +47,50 @@ export default function Login() {
       setIsSubmitting(true)
 
       // Initiates real Firebase Google Auth popup
-      await loginWithGoogle()
+      const user = await loginWithGoogle()
 
-      // Redirect to user dashboard after successful authentication
-      navigate('/user', { replace: true })
+      // Determine authenticated role directly from verified MongoDB backend record
+      if (user) {
+        try {
+          const idToken = await user.getIdToken()
+          const syncRes = await fetch('http://localhost:5000/api/users/sync', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`
+            },
+            body: JSON.stringify({
+              name: user.displayName,
+              email: user.email,
+              photoURL: user.photoURL
+            })
+          })
+          if (syncRes.ok) {
+            const syncData = await syncRes.json()
+            if (syncData?.user?.role === 'admin') {
+              navigate('/admin', { replace: true })
+              return
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Backend sync check error:', syncErr)
+        }
+      }
+
+      // Normal users redirect to /dashboard
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       setLocalError(err.message || 'Google sign-in could not be completed.')
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const handleGuestLogin = () => {
+    setLocalError('')
+    clearAuthError()
+    continueAsGuest()
+    navigate('/dashboard', { replace: true })
   }
 
   const activeError = localError || authError
@@ -123,6 +173,17 @@ export default function Login() {
               </svg>
             )}
             <span>{isSubmitting ? 'Authenticating with Google...' : 'Continue with Google'}</span>
+          </button>
+
+          {/* Guest Access Option */}
+          <button
+            id="guest-signin-btn"
+            type="button"
+            onClick={handleGuestLogin}
+            className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 hover:text-white border border-slate-700 font-medium text-xs sm:text-sm transition-all duration-200 active:scale-[0.99] cursor-pointer"
+          >
+            <Compass className="w-4 h-4 text-emerald-400" />
+            <span>Continue as Guest (Read-Only Access)</span>
           </button>
 
           {/* Context Explanatory Note */}
