@@ -109,17 +109,28 @@ if (!getApps().length) {
     }
   }
 
-  // 3. Fallback to local serviceAccountKey.json file (local development)
-  if (!credential && existsSync(serviceAccountPath)) {
-    try {
-      const sa = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
-      if (sa.private_key) {
-        sa.private_key = sa.private_key.replace(/\\n/g, '\n');
+  // 3. Fallback to Render Secret Files or local serviceAccountKey.json file
+  const candidateFilePaths = [
+    serviceAccountPath,
+    '/etc/secrets/serviceAccountKey.json',
+    '/etc/secrets/backend/config/serviceAccountKey.json',
+    path.join(process.cwd(), 'serviceAccountKey.json'),
+    path.join(process.cwd(), 'backend', 'config', 'serviceAccountKey.json')
+  ];
+
+  for (const candidatePath of candidateFilePaths) {
+    if (!credential && existsSync(candidatePath)) {
+      try {
+        const fileContent = readFileSync(candidatePath, 'utf8');
+        const sa = parseServiceAccount(fileContent);
+        if (sa && (sa.project_id || sa.projectId) && (sa.private_key || sa.privateKey)) {
+          credential = cert(sa);
+          console.log(`Firebase Admin: Loaded credentials from file (${candidatePath})`);
+          break;
+        }
+      } catch (error) {
+        console.error(`Firebase Admin: Error reading service account file (${candidatePath}): ${error.message}`);
       }
-      credential = cert(sa);
-      console.log('Firebase Admin: Loaded credentials from local serviceAccountKey.json');
-    } catch (error) {
-      console.error(`Firebase Admin: Error reading serviceAccountKey.json: ${error.message}`);
     }
   }
 
