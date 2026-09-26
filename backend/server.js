@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { existsSync } from 'fs';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
@@ -158,7 +159,16 @@ app.get('/api/debug/auth', (req, res) => {
     },
     parsedDetails,
     parseError,
-    expectedProjectId: 'national-weather-platform'
+    expectedProjectId: 'national-weather-platform',
+    envPreview: rawSA ? `${rawSA.slice(0, 10)}...${rawSA.slice(-10)}` : null,
+    envType: typeof rawSA,
+    pathExists: rawSA && typeof rawSA === 'string' ? existsSync(rawSA) : false,
+    renderSecretFiles: [
+      '/etc/secrets/serviceAccountKey.json',
+      '/etc/secrets/backend/config/serviceAccountKey.json',
+      './serviceAccountKey.json',
+      '../serviceAccountKey.json'
+    ].filter(p => existsSync(p))
   });
 });
 
