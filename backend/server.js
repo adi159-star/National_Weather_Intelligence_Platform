@@ -16,18 +16,57 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Allowed Frontend Origins
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://national-weather-intelligence-platf-snowy.vercel.app'
+];
+
+if (process.env.FRONTEND_URL) {
+  process.env.FRONTEND_URL.split(',').forEach((url) => {
+    const trimmed = url.trim().replace(/\/+$/, '');
+    if (trimmed && !allowedOrigins.includes(trimmed)) {
+      allowedOrigins.push(trimmed);
+    }
+  });
+}
+
 // Middleware
 app.use(
   cors({
-    origin: [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000'
-    ],
-    credentials: true
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      // Check exact match in configured origins
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow any Vercel deployment preview / production domain for this application
+      try {
+        const parsed = new URL(origin);
+        if (
+          parsed.protocol === 'https:' &&
+          (parsed.hostname.endsWith('.vercel.app') || parsed.hostname === 'national-weather-intelligence-platf-snowy.vercel.app')
+        ) {
+          return callback(null, true);
+        }
+      } catch {
+        // invalid URL format
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
   })
 );
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
