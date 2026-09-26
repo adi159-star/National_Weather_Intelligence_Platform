@@ -6,7 +6,6 @@ import {
   Sparkles, 
   ArrowRight, 
   Database, 
-  Lock, 
   CheckCircle2 
 } from 'lucide-react'
 import { AuthProvider, useAuth } from './context/AuthContext'

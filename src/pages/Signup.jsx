@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CloudSunRain, AlertCircle, ShieldCheck, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { API_BASE_URL, safeFetchJson } from '../config/api'
 
 /**
  * Signup Page — National Weather Intelligence Platform
@@ -40,7 +41,7 @@ export default function Signup() {
       if (user) {
         try {
           const idToken = await user.getIdToken()
-          const syncRes = await fetch(`${import.meta.env.VITE_API_URL}/api/users/sync`, {
+          const syncRes = await fetch(`${API_BASE_URL}/api/users/sync`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -52,16 +53,15 @@ export default function Signup() {
               photoURL: user.photoURL
             })
           })
-          if (syncRes.ok) {
-            const syncData = await syncRes.json()
-            if (syncData?.user?.role === 'admin') {
-              navigate('/admin', { replace: true })
-              return
-            }
+          const res = await safeFetchJson(syncRes)
+          if (res.ok && res.data?.user?.role === 'admin') {
+            navigate('/admin', { replace: true })
+            return
           }
         } catch (syncErr) {
           console.warn('Backend sync check error in signup:', syncErr)
         }
+
       }
 
       // Redirect immediately to User Dashboard upon account creation/sign-in

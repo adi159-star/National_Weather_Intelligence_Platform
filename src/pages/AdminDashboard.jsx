@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { 
   ShieldCheck, 
@@ -13,9 +13,16 @@ import {
   LogOut, 
   ArrowLeft,
   Calendar,
-  ExternalLink
+  Copy,
+  Radio,
+  Share2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { API_BASE_URL, safeFetchJson } from '../config/api'
+import WeatherMap from '../components/WeatherMap'
+import AnalyticsCharts from '../components/AnalyticsCharts'
 
 /**
  * AdminDashboard Component
@@ -29,29 +36,84 @@ export default function AdminDashboard() {
   const navigate = useNavigate()
 
   const [reports, setReports] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [actionInProgress, setActionInProgress] = useState(null)
+  const [visiblePendingCount, setVisiblePendingCount] = useState(5)
+  const pendingQueueRef = useRef(null)
 
   const fetchReports = async () => {
     try {
       setLoading(true)
       setError('')
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/weather-reports`)
-      if (!response.ok) {
-        throw new Error(`Failed to load weather reports (Status: ${response.status})`)
+      setVisiblePendingCount(5)
+      const [reportsRes, summaryRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/weather-reports`).then(safeFetchJson),
+        fetch(`${API_BASE_URL}/api/analytics/summary`).then(safeFetchJson)
+      ])
+
+      if (!reportsRes.ok) {
+        throw new Error(reportsRes.error || `Failed to load weather reports (Status: ${reportsRes.status})`)
       }
-      const data = await response.json()
-      if (data?.success && Array.isArray(data.reports)) {
-        setReports(data.reports)
+
+      if (reportsRes.data?.success && Array.isArray(reportsRes.data.reports)) {
+        setReports(reportsRes.data.reports)
       } else {
         setReports([])
       }
+
+      if (summaryRes.ok && summaryRes.data?.summary) {
+        setSummary(summaryRes.data.summary)
+      }
     } catch (err) {
-      console.error('Error fetching admin reports:', err)
+      console.error('Error fetching admin reports & analytics:', err)
       setError(err.message || 'Unable to connect to weather reports service')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const updateReportStatus = async (reportId, status) => {
+    try {
+      setActionInProgress(reportId)
+      const token = await currentUser?.firebaseUser?.getIdToken?.()
+      const headers = { 'Content-Type': 'application/json' }
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/weather-reports/${reportId}/status`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status })
+      })
+
+      const res = await safeFetchJson(response)
+      if (!res.ok) {
+        throw new Error(res.error || `Failed to update status (Status: ${res.status})`)
+      }
+
+      // Update local report verification status immediately
+      setReports((prev) =>
+        prev.map((r) => (r._id === reportId ? { ...r, verificationStatus: status } : r))
+      )
+
+      // Refresh live MongoDB analytics metrics in background
+      fetch(`${API_BASE_URL}/api/analytics/summary`)
+        .then(safeFetchJson)
+        .then((sRes) => {
+          if (sRes.ok && sRes.data?.summary) {
+            setSummary(sRes.data.summary)
+          }
+        })
+        .catch((e) => console.warn('Summary refresh warning:', e))
+    } catch (err) {
+      console.error('Error updating status:', err)
+      alert(err.message || 'Error updating status')
+    } finally {
+      setActionInProgress(null)
     }
   }
 
@@ -71,13 +133,32 @@ export default function AdminDashboard() {
     }
   }
 
-  // Calculate live verification statistics from database reports
-  const totalCount = reports.length
-  const pendingCount = reports.filter((r) => r.verificationStatus === 'pending').length
-  const verifiedCount = reports.filter((r) => r.verificationStatus === 'verified').length
-  const rejectedCount = reports.filter((r) => r.verificationStatus === 'rejected').length
+  // Calculate live verification & multi-source analytics statistics
+  const totalCount = summary?.totalReports ?? reports.length
+  const pendingCount = summary?.pendingReports ?? reports.filter((r) => r.verificationStatus === 'pending').length
+  const verifiedCount = summary?.verifiedReports ?? reports.filter((r) => r.verificationStatus === 'verified').length
+  const rejectedCount = summary?.rejectedReports ?? reports.filter((r) => r.verificationStatus === 'rejected').length
+  const duplicateCount = summary?.duplicateReports ?? reports.filter((r) => r.isDuplicate === true).length
+  const citizenCount = summary?.citizenReports ?? reports.filter((r) => !r.sourceType || r.sourceType === 'citizen').length
+  const apiCount = summary?.weatherApiReports ?? reports.filter((r) => r.sourceType === 'weather_api').length
+  const socialPublicCount = summary 
+    ? (summary.socialReports || 0) + (summary.publicDatasetReports || 0)
+    : reports.filter((r) => r.sourceType === 'social' || r.sourceType === 'public_dataset').length
 
   const pendingReports = reports.filter((r) => r.verificationStatus === 'pending')
+  const totalPending = pendingReports.length
+  const visiblePendingReports = pendingReports.slice(0, visiblePendingCount)
+
+  const handleShowMorePending = () => {
+    setVisiblePendingCount((prev) => Math.min(prev + 5, totalPending))
+  }
+
+  const handleShowLessPending = () => {
+    setVisiblePendingCount(5)
+    if (pendingQueueRef.current) {
+      pendingQueueRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
 
   const formatLocation = (city, state) => {
     if (city && state) return `${city}, ${state}`
@@ -208,71 +289,145 @@ export default function AdminDashboard() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
             {/* Total Reports */}
-            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-5 hover:border-slate-700/80 transition-all">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  Total Reports
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Total
                 </span>
-                <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
-                  <FileText className="w-5 h-5" />
+                <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+                  <FileText className="w-4 h-4" />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-white tracking-tight">
+              <div className="text-2xl font-bold text-white tracking-tight">
                 {totalCount}
               </div>
-              <p className="text-xs text-slate-400 mt-1">All crowdsourced ground observations</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">All ingested records</p>
             </div>
 
             {/* Pending Reports */}
-            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-5 hover:border-slate-700/80 transition-all">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  Pending Reports
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Pending
                 </span>
-                <div className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                  <Clock className="w-5 h-5" />
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Clock className="w-4 h-4" />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-amber-400 tracking-tight">
+              <div className="text-2xl font-bold text-amber-400 tracking-tight">
                 {pendingCount}
               </div>
-              <p className="text-xs text-slate-400 mt-1">Awaiting meteorological verification</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Awaiting verification</p>
             </div>
 
             {/* Verified Reports */}
-            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-5 hover:border-slate-700/80 transition-all">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  Verified Reports
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Verified
                 </span>
-                <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                  <CheckCircle2 className="w-5 h-5" />
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-emerald-400 tracking-tight">
+              <div className="text-2xl font-bold text-emerald-400 tracking-tight">
                 {verifiedCount}
               </div>
-              <p className="text-xs text-slate-400 mt-1">Validated with radar & AWS sensors</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Ground-truth verified</p>
             </div>
 
             {/* Rejected Reports */}
-            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-5 hover:border-slate-700/80 transition-all">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  Rejected Reports
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Rejected
                 </span>
-                <div className="w-9 h-9 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
-                  <XCircle className="w-5 h-5" />
+                <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                  <XCircle className="w-4 h-4" />
                 </div>
               </div>
-              <div className="text-3xl font-bold text-rose-400 tracking-tight">
+              <div className="text-2xl font-bold text-rose-400 tracking-tight">
                 {rejectedCount}
               </div>
-              <p className="text-xs text-slate-400 mt-1">False alarms or anomalous submissions</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Flagged or invalid</p>
+            </div>
+
+            {/* Duplicate Reports */}
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Duplicates
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                  <Copy className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-purple-300 tracking-tight">
+                {duplicateCount}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">Detected & flagged</p>
+            </div>
+
+            {/* Citizen Reports */}
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Citizen
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <User className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-indigo-300 tracking-tight">
+                {citizenCount}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">Crowdsourced</p>
+            </div>
+
+            {/* API Reports */}
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  API Feeds
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-400">
+                  <Radio className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-teal-300 tracking-tight">
+                {apiCount}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">Open-Meteo & IMD</p>
+            </div>
+
+            {/* Social / Public Reports */}
+            <div className="bg-slate-900/70 border border-slate-800/80 backdrop-blur-sm rounded-xl p-4 hover:border-slate-700/80 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Social/Public
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/30 flex items-center justify-center text-fuchsia-400">
+                  <Share2 className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-fuchsia-300 tracking-tight">
+                {socialPublicCount}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">Social & Open Data</p>
             </div>
           </div>
+        </section>
+
+        {/* Section: Interactive India Weather Mapbox Map */}
+        <section>
+          <WeatherMap height="520px" />
+        </section>
+
+        {/* Section: Big Data Analytics & Trend Visualizations */}
+        <section>
+          <AnalyticsCharts />
         </section>
 
         {error && (
@@ -291,7 +446,7 @@ export default function AdminDashboard() {
         )}
 
         {/* Section 1: Pending Verification Queue */}
-        <section className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
+        <section ref={pendingQueueRef} className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
@@ -319,49 +474,130 @@ export default function AdminDashboard() {
               <p className="text-slate-500 mt-0.5">There are currently no reports awaiting verification.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pendingReports.map((report) => (
-                <div
-                  key={report._id}
-                  className="p-4 rounded-xl bg-slate-950/70 border border-amber-500/20 hover:border-amber-500/40 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-white">
-                      {formatLocation(report.city, report.state)}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      Pending Verification
-                    </span>
-                  </div>
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {visiblePendingReports.map((report) => (
+                  <div
+                    key={report._id}
+                    className="p-4 rounded-xl bg-slate-950/70 border border-amber-500/20 hover:border-amber-500/40 transition-colors flex flex-col justify-between"
+                  >
+                    <div>
+                      {/* Header: Location & Status */}
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold text-white flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          <span>{formatLocation(report.city, report.state)}</span>
+                        </span>
+                        <span className="text-[10px] px-2.5 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                          Pending Verification
+                        </span>
+                      </div>
 
-                  <div className="text-xs text-sky-400 font-medium mb-1.5">
-                    {formatEventType(report.eventType)}
-                  </div>
+                      {/* Meteorological Details & AI Metadata Badges */}
+                      <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                        <span className="text-xs text-sky-400 font-semibold bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                          Event: {formatEventType(report.eventType)}
+                        </span>
+                        <span className="text-xs text-purple-300 font-medium bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                          AI: {formatEventType(report.aiClassification || report.eventType)} ({report.aiConfidence !== null && report.aiConfidence !== undefined ? `${Math.round(report.aiConfidence * 100)}%` : 'Rule-based'})
+                        </span>
+                        <span className="text-xs text-slate-300 font-mono capitalize bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700/60">
+                          Src: {(report.sourceType || 'citizen').replace('_', ' ')}
+                        </span>
+                        {report.isDuplicate ? (
+                          <span className="text-[10px] font-semibold bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded border border-rose-500/30 flex items-center gap-1">
+                            <Copy className="w-3 h-3" /> Duplicate
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30">
+                            Original Report
+                          </span>
+                        )}
+                      </div>
 
-                  <p className="text-xs text-slate-300 mb-3 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/60">
-                    "{report.description}"
-                  </p>
+                      {/* Ground Description */}
+                      <p className="text-xs text-slate-300 mb-3 bg-slate-900/70 p-2.5 rounded-lg border border-slate-800/80 leading-relaxed">
+                        "{report.description}"
+                      </p>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-2 border-t border-slate-800/60">
-                    <span className="flex items-center gap-1 text-slate-300">
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      {report.userName || 'Anonymous Observer'}
-                    </span>
-                    <span className="flex items-center gap-1 font-mono text-slate-400">
-                      <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                      {formatDateTime(report.reportedAt || report.createdAt)}
-                    </span>
-                  </div>
+                      {/* Metadata Footer (No user email exposed) */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-2 border-t border-slate-800/60">
+                        <span className="flex items-center gap-1 text-slate-300">
+                          <User className="w-3.5 h-3.5 text-slate-500" />
+                          {report.userName || 'Anonymous Observer'}
+                        </span>
+                        <span className="flex items-center gap-1 font-mono text-slate-400">
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          {formatDateTime(report.reportedAt || report.createdAt)}
+                        </span>
+                      </div>
 
-                  {report.latitude && report.longitude && (
-                    <div className="mt-2 text-[11px] font-mono text-slate-500 flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-slate-500" />
-                      <span>GPS: {report.latitude.toFixed(4)}, {report.longitude.toFixed(4)}</span>
+                      {report.latitude && report.longitude && (
+                        <div className="mt-1.5 text-[11px] font-mono text-slate-500 flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-slate-600" />
+                          <span>GPS: {Number(report.latitude).toFixed(4)}, {Number(report.longitude).toFixed(4)}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    {/* Functional Action Buttons */}
+                    <div className="mt-3.5 pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5">
+                      <button
+                        onClick={() => updateReportStatus(report._id, 'rejected')}
+                        disabled={actionInProgress === report._id}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm hover:border-rose-500/50"
+                      >
+                        <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                        <span>{actionInProgress === report._id ? 'Updating...' : 'Reject'}</span>
+                      </button>
+                      <button
+                        onClick={() => updateReportStatus(report._id, 'verified')}
+                        disabled={actionInProgress === report._id}
+                        className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm hover:border-emerald-500/50"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{actionInProgress === report._id ? 'Updating...' : 'Verify'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination Controls: Show More / Show Less */}
+              {!loading && totalPending > 5 && (
+                <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Showing {visiblePendingReports.length} of {totalPending} pending reports
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    {visiblePendingCount > 5 && (
+                      <button
+                        type="button"
+                        onClick={handleShowLessPending}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-98"
+                        id="show-less-pending-btn"
+                      >
+                        <span>Show Less</span>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {visiblePendingCount < totalPending && (
+                      <button
+                        type="button"
+                        onClick={handleShowMorePending}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-amber-200 border border-amber-500/30 hover:border-amber-500/50 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-98"
+                        id="show-more-pending-btn"
+                      >
+                        <span>Show More</span>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
 
@@ -399,11 +635,13 @@ export default function AdminDashboard() {
                   <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-medium uppercase tracking-wider text-[10px]">
                     <th className="py-3 px-4">Date / Time</th>
                     <th className="py-3 px-4">Observer</th>
+                    <th className="py-3 px-4">Channel</th>
                     <th className="py-3 px-4">Location</th>
                     <th className="py-3 px-4">Phenomenon</th>
                     <th className="py-3 px-4">Description</th>
                     <th className="py-3 px-4">Coordinates</th>
                     <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Moderation</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -425,6 +663,16 @@ export default function AdminDashboard() {
                           {report.userName || 'Anonymous'}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap">
+                          <span className="text-[11px] font-mono text-slate-300 capitalize">
+                            {(report.sourceType || 'citizen').replace('_', ' ')}
+                          </span>
+                          {report.isDuplicate && (
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                              DUP
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
                           {formatLocation(report.city, report.state)}
                         </td>
                         <td className="py-3 px-4 text-sky-400 font-medium whitespace-nowrap">
@@ -442,6 +690,40 @@ export default function AdminDashboard() {
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusBadge}`}>
                             {status.charAt(0).toUpperCase() + status.slice(1)}
                           </span>
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap text-right">
+                          {status === 'pending' ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => updateReportStatus(report._id, 'verified')}
+                                disabled={actionInProgress === report._id}
+                                title="Authorize report"
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>Verify</span>
+                              </button>
+                              <button
+                                onClick={() => updateReportStatus(report._id, 'rejected')}
+                                disabled={actionInProgress === report._id}
+                                title="Dismiss report"
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-1"
+                              >
+                                <XCircle className="w-3 h-3 text-rose-400" />
+                                <span>Reject</span>
+                              </button>
+                            </div>
+                          ) : status === 'verified' ? (
+                            <span className="text-[11px] text-emerald-400/90 font-medium inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Verified</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-rose-400/90 font-medium inline-flex items-center gap-1">
+                              <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                              <span>Rejected</span>
+                            </span>
+                          )}
                         </td>
                       </tr>
                     )

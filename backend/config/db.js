@@ -11,6 +11,8 @@ try {
 const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGODB_URI;
+    const isConfigured = Boolean(mongoURI && !mongoURI.includes('<db_password>'));
+    console.log(`MongoDB URI configured: ${isConfigured}`);
 
     if (!mongoURI || mongoURI === 'YOUR_MONGODB_CONNECTION_STRING') {
       console.warn('⚠️ Warning: MONGODB_URI is not configured in backend/.env. Please provide your MongoDB Atlas connection string.');
@@ -27,9 +29,12 @@ const connectDB = async () => {
       dbName: 'weather_platform'
     });
 
-    console.log(`MongoDB connected successfully: ${conn.connection.host} (Database: ${conn.connection.name})`);
+    console.log('MongoDB connected successfully');
+    console.log(`Database name: ${conn.connection.name}`);
+    return conn;
   } catch (error) {
     console.error(`MongoDB connection error: ${error.message}`);
+    throw error;
   }
 };
 

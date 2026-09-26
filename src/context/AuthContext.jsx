@@ -6,6 +6,7 @@ import {
 } from 'firebase/auth'
 import { auth, googleProvider, isFirebaseConfigured } from '../services/firebase'
 import { getFriendlyAuthErrorMessage } from '../utils/authErrors'
+import { API_BASE_URL, safeFetchJson } from '../config/api'
 
 const AuthContext = createContext(null)
 
@@ -65,7 +66,7 @@ export function AuthProvider({ children }) {
         // Synchronize authenticated Firebase user with MongoDB backend
         try {
           const idToken = await user.getIdToken()
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/sync`, {
+          const response = await fetch(`${API_BASE_URL}/api/users/sync`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -78,17 +79,16 @@ export function AuthProvider({ children }) {
             })
           })
 
-          if (response.ok) {
-            const data = await response.json()
-            if (data?.user) {
-              setCurrentUser((prev) => ({
-                ...prev,
-                role: data.user.role || 'user',
-                mongoUser: data.user
-              }))
-            }
+          const res = await safeFetchJson(response)
+
+          if (res.ok && res.data?.user) {
+            setCurrentUser((prev) => ({
+              ...prev,
+              role: res.data.user.role || 'user',
+              mongoUser: res.data.user
+            }))
           } else {
-            console.warn('[AuthContext] Backend sync returned status:', response.status)
+            console.warn('[AuthContext] Backend sync returned error:', res.error || response.status)
           }
         } catch (syncErr) {
           // If backend is unavailable, do not break Firebase login itself

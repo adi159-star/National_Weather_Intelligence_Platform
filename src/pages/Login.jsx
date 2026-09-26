@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { CloudSunRain, AlertCircle, Compass } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { API_BASE_URL, safeFetchJson } from '../config/api'
 
 /**
  * Login Page — National Weather Intelligence Platform
@@ -24,7 +25,6 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [localError, setLocalError] = useState('')
   const navigate = useNavigate()
-  const location = useLocation()
 
   // Redirect if already logged in or in guest mode
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function Login() {
       if (user) {
         try {
           const idToken = await user.getIdToken()
-          const syncRes = await fetch(`${import.meta.env.VITE_API_URL}/api/users/sync`, {
+          const syncRes = await fetch(`${API_BASE_URL}/api/users/sync`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -65,16 +65,15 @@ export default function Login() {
               photoURL: user.photoURL
             })
           })
-          if (syncRes.ok) {
-            const syncData = await syncRes.json()
-            if (syncData?.user?.role === 'admin') {
-              navigate('/admin', { replace: true })
-              return
-            }
+          const res = await safeFetchJson(syncRes)
+          if (res.ok && res.data?.user?.role === 'admin') {
+            navigate('/admin', { replace: true })
+            return
           }
         } catch (syncErr) {
           console.warn('Backend sync check error:', syncErr)
         }
+
       }
 
       // Normal users redirect to /dashboard

@@ -1,0 +1,104 @@
+{
+  "accuracy": 0.75,
+  "precision": 0.625,
+  "recall": 0.75,
+  "f1_score": 0.675,
+  "train_samples": 62,
+  "test_samples": 16,
+  "classes": [
+    "cold_wave",
+    "dust_storm",
+    "flooding",
+    "fog",
+    "heatwave",
+    "other",
+    "rainfall",
+    "snowfall",
+    "strong_wind",
+    "thunderstorm",
+    "weather_observation"
+  ],
+  "class_report": {
+    "cold_wave": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 1.0
+    },
+    "dust_storm": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "flooding": {
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "f1-score": 0.8,
+      "support": 2.0
+    },
+    "fog": {
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "f1-score": 0.8,
+      "support": 2.0
+    },
+    "heatwave": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 2.0
+    },
+    "other": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 1.0
+    },
+    "rainfall": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 2.0
+    },
+    "snowfall": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "strong_wind": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "thunderstorm": {
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "f1-score": 0.8,
+      "support": 2.0
+    },
+    "weather_observation": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "accuracy": 0.75,
+    "macro avg": {
+      "precision": 0.6363636363636364,
+      "recall": 0.7272727272727273,
+      "f1-score": 0.6727272727272727,
+      "support": 16.0
+    },
+    "weighted avg": {
+      "precision": 0.625,
+      "recall": 0.75,
+      "f1-score": 0.6749999999999999,
+      "support": 16.0
+    }
+  },
+  "trained_at": "2026-09-26T20:04:24.624094Z",
+  "model_type": "TF-IDF + LogisticRegression (Extensible to Transformers/BERT)"
+}
