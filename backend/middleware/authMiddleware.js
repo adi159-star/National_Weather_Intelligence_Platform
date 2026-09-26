@@ -28,7 +28,8 @@ export const verifyFirebaseToken = async (req, res, next) => {
     console.error('Firebase token verification error:', error.message);
     return res.status(401).json({
       success: false,
-      message: 'Unauthorized: Invalid or expired token'
+      message: 'Unauthorized: Invalid or expired token',
+      error: error.message
     });
   }
 };

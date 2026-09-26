@@ -3,7 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import connectDB from './config/db.js';
-import './config/firebaseAdmin.js';
+import { getApps } from 'firebase-admin/app';
+import { parseServiceAccount } from './config/firebaseAdmin.js';
 import WeatherReport from './models/WeatherReport.js';
 import userRoutes from './routes/userRoutes.js';
 import weatherRoutes from './routes/weatherRoutes.js';
@@ -112,6 +113,55 @@ app.get('/api/debug/db', async (req, res) => {
     });
   }
 });
+
+// TEMPORARY DIAGNOSTIC ENDPOINT FOR FIREBASE ADMIN STATUS (No secrets exposed)
+app.get('/api/debug/auth', (req, res) => {
+  const apps = getApps();
+  const rawSA =
+    process.env.FIREBASE_SERVICE_ACCOUNT ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+  let parsedDetails = null;
+  let parseError = null;
+
+  if (rawSA) {
+    try {
+      const sa = parseServiceAccount(rawSA);
+      if (sa) {
+        parsedDetails = {
+          project_id: sa.project_id || sa.projectId || null,
+          client_email: sa.client_email || sa.clientEmail || null,
+          has_private_key: Boolean(sa.private_key || sa.privateKey),
+          private_key_length: (sa.private_key || sa.privateKey || '').length
+        };
+      } else {
+        parseError = 'parseServiceAccount returned null';
+      }
+    } catch (err) {
+      parseError = err.message;
+    }
+  }
+
+  res.status(200).json({
+    firebaseAdminInitialized: apps.length > 0,
+    appsCount: apps.length,
+    appName: apps.length > 0 ? apps[0].name : null,
+    envVarsPresent: {
+      FIREBASE_SERVICE_ACCOUNT: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT),
+      FIREBASE_SERVICE_ACCOUNT_length: process.env.FIREBASE_SERVICE_ACCOUNT ? process.env.FIREBASE_SERVICE_ACCOUNT.length : 0,
+      FIREBASE_SERVICE_ACCOUNT_KEY: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_KEY),
+      GOOGLE_APPLICATION_CREDENTIALS: Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS),
+      FIREBASE_PROJECT_ID: Boolean(process.env.FIREBASE_PROJECT_ID),
+      FIREBASE_CLIENT_EMAIL: Boolean(process.env.FIREBASE_CLIENT_EMAIL),
+      FIREBASE_PRIVATE_KEY: Boolean(process.env.FIREBASE_PRIVATE_KEY)
+    },
+    parsedDetails,
+    parseError,
+    expectedProjectId: 'national-weather-platform'
+  });
+});
+
 
 // Connect to MongoDB Atlas before starting server
 try {

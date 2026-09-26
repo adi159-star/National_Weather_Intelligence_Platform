@@ -11,13 +11,23 @@ const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
 
 let app = null;
 
-function parseServiceAccount(rawInput) {
+export function parseServiceAccount(rawInput) {
   if (!rawInput) return null;
   if (typeof rawInput === 'object') return rawInput;
 
   let str = String(rawInput).trim();
+
+  // If wrapped in external quotes (e.g. from Render dashboard pasting "{\"type\":...}")
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    try {
+      str = JSON.parse(str);
+    } catch {
+      str = str.slice(1, -1);
+    }
+  }
+
   // Decode base64 if provided in base64 format
-  if (!str.startsWith('{') && !str.startsWith('[')) {
+  if (typeof str === 'string' && !str.startsWith('{') && !str.startsWith('[')) {
     try {
       const decoded = Buffer.from(str, 'base64').toString('utf8');
       if (decoded.startsWith('{')) {
@@ -29,11 +39,22 @@ function parseServiceAccount(rawInput) {
   }
 
   try {
-    const parsed = JSON.parse(str);
-    if (parsed.private_key && typeof parsed.private_key === 'string') {
-      parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+    let parsed = typeof str === 'string' ? JSON.parse(str) : str;
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {}
     }
-    return parsed;
+    if (parsed && typeof parsed === 'object') {
+      const key = parsed.private_key || parsed.privateKey;
+      if (key && typeof key === 'string') {
+        const normalizedKey = key.replace(/\\n/g, '\n');
+        parsed.private_key = normalizedKey;
+        parsed.privateKey = normalizedKey;
+      }
+      return parsed;
+    }
+    return null;
   } catch (err) {
     console.error(`Firebase Admin: Error parsing service account JSON: ${err.message}`);
     return null;
@@ -43,21 +64,42 @@ function parseServiceAccount(rawInput) {
 if (!getApps().length) {
   let credential = null;
 
-  // 1. Try FIREBASE_SERVICE_ACCOUNT environment variable (Render / hosting environments)
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    const sa = parseServiceAccount(process.env.FIREBASE_SERVICE_ACCOUNT);
-    if (sa && (sa.project_id || sa.projectId) && sa.private_key) {
-      credential = cert(sa);
-      console.log('Firebase Admin: Loaded credentials from FIREBASE_SERVICE_ACCOUNT environment variable');
+  // 1. Try FIREBASE_SERVICE_ACCOUNT or FIREBASE_SERVICE_ACCOUNT_KEY or GOOGLE_APPLICATION_CREDENTIALS
+  const rawEnvSA =
+    process.env.FIREBASE_SERVICE_ACCOUNT ||
+    process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+  if (rawEnvSA) {
+    // Check if it's a file path
+    if (typeof rawEnvSA === 'string' && existsSync(rawEnvSA)) {
+      try {
+        const fileContent = readFileSync(rawEnvSA, 'utf8');
+        const sa = parseServiceAccount(fileContent);
+        if (sa && (sa.project_id || sa.projectId) && (sa.private_key || sa.privateKey)) {
+          credential = cert(sa);
+          console.log(`Firebase Admin: Loaded credentials from file path in env (${rawEnvSA})`);
+        }
+      } catch (e) {
+        console.error(`Firebase Admin: Error reading file from env path: ${e.message}`);
+      }
+    }
+
+    if (!credential) {
+      const sa = parseServiceAccount(rawEnvSA);
+      if (sa && (sa.project_id || sa.projectId) && (sa.private_key || sa.privateKey)) {
+        credential = cert(sa);
+        console.log('Firebase Admin: Loaded credentials from FIREBASE_SERVICE_ACCOUNT environment variable');
+      }
     }
   }
 
   // 2. Try individual environment variables
-  if (!credential && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  if (!credential && (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID) && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
     try {
       const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
       credential = cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
+        projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         privateKey
       });
