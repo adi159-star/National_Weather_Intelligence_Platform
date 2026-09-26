@@ -20,7 +20,7 @@ import {
   ChevronUp
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { API_BASE_URL, safeFetchJson } from '../config/api'
+import { API_BASE_URL, safeFetchJson, authenticatedFetch } from '../config/api'
 import WeatherMap from '../components/WeatherMap'
 import AnalyticsCharts from '../components/AnalyticsCharts'
 
@@ -78,17 +78,15 @@ export default function AdminDashboard() {
   const updateReportStatus = async (reportId, status) => {
     try {
       setActionInProgress(reportId)
-      const token = await currentUser?.firebaseUser?.getIdToken?.()
-      const headers = { 'Content-Type': 'application/json' }
-      if (token) {
-        headers.Authorization = `Bearer ${token}`
-      }
 
-      const response = await fetch(`${API_BASE_URL}/api/weather-reports/${reportId}/status`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status })
-      })
+      const response = await authenticatedFetch(
+        `${API_BASE_URL}/api/weather-reports/${reportId}/status`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ status }),
+          firebaseUser: currentUser?.firebaseUser
+        }
+      )
 
       const res = await safeFetchJson(response)
       if (!res.ok) {

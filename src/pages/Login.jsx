@@ -52,7 +52,7 @@ export default function Login() {
       // Determine authenticated role directly from verified MongoDB backend record
       if (user) {
         try {
-          const idToken = await user.getIdToken()
+          const idToken = await user.getIdToken(true)
           const syncRes = await fetch(`${API_BASE_URL}/api/users/sync`, {
             method: 'POST',
             headers: {

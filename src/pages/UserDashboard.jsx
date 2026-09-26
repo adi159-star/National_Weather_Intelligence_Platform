@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import StatCard from '../components/StatCard'
-import { API_BASE_URL, safeFetchJson } from '../config/api'
+import { API_BASE_URL, safeFetchJson, authenticatedFetch } from '../config/api'
 import WeatherMap from '../components/WeatherMap'
 
 /**
@@ -246,7 +246,6 @@ export default function UserDashboard() {
 
     try {
       setSubmitting(true)
-      const token = await currentUser.firebaseUser.getIdToken()
 
       const payload = {
         eventType: eventType.trim(),
@@ -257,14 +256,15 @@ export default function UserDashboard() {
         longitude: longitude ? Number(longitude) : undefined
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/weather-reports`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      })
+      // Automatically handles token expiration, auto-refresh via getIdToken(true), and 401 retry
+      const response = await authenticatedFetch(
+        `${API_BASE_URL}/api/weather-reports`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          firebaseUser: currentUser?.firebaseUser
+        }
+      )
 
       const res = await safeFetchJson(response)
 
